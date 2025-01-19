@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
 
 // Структура для JSON-RPC запроса
@@ -35,41 +36,28 @@ type JsonRpcError struct {
 	Message string `json:"message"`
 }
 
-type BoostResponse struct {
-	Data Data `json:"data"`
-}
-
-type Data struct {
-	Boosts []Boost `json:"boosts"`
-}
-
 type Boost struct {
-	Url         string   `json:"url"`
-	ChainId     string   `json:"chainid"`
-	TokenAdress string   `json:"tokenAddress"`
-	Amount      float64  `json:"amount"`
-	TotalAmount float64  `json:"totalAmount"`
-	Icon        string   `json:"icon"`
-	Header      string   `json:"header"`
-	Description string   `json:"description"`
-	Links       LinkData `json:"links"`
-}
-
-type LinkData struct {
-	objs any
+	Url         string              `json:"url"`
+	ChainId     string              `json:"chainid"`
+	TokenAdress string              `json:"tokenAddress"`
+	Amount      float64             `json:"amount"`
+	TotalAmount float64             `json:"totalAmount"`
+	Icon        string              `json:"icon"`
+	Header      string              `json:"header"`
+	Description string              `json:"description"`
+	Links       []map[string]string `json:"links"`
 }
 
 func getBalance(walletAddress string) (int64, error) {
 	url := "https://api.mainnet-beta.solana.com"
 
 	// Создаем JSON-RPC запрос
-	request :=
-		JsonRpcRequest{
-			Jsonrpc: "2.0",
-			Id:      1,
-			Method:  "getBalance",
-			Params:  []interface{}{walletAddress},
-		}
+	request := JsonRpcRequest{
+		Jsonrpc: "2.0",
+		Id:      1,
+		Method:  "getBalance",
+		Params:  []interface{}{walletAddress},
+	}
 
 	// Преобразуем структуру в JSON
 	jsonReq, err := json.Marshal(request)
@@ -105,47 +93,48 @@ func getBalance(walletAddress string) (int64, error) {
 }
 
 func main() {
-	//walletAddress := "EsoQDanDVFM3bL9XxguhAtc7iTN4HBQTkJfzJ9MEMfTc" // Замените на адрес вашего кошелька
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
 	url := "https://api.dexscreener.com/token-boosts/latest/v1"
-	/*
-		balance, err := getBalance(walletAddress)
-		if err != nil {
-			fmt.Printf("Error getting balance: %v\n", err)
-			return
-		}
 
-		fmt.Printf("Balance of wallet %s: %d lamports\n", walletAddress, balance)
-	*/
-	response, err := http.Get(url)
+	response, err := client.Get(url)
 	if err != nil {
 		fmt.Printf("Ошибка при выполнении запроса: %v", err)
+		return
 	}
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
 		fmt.Printf("Ошибка: Получен статус-код %d от API", response.StatusCode)
+		return
 	}
 
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		fmt.Printf("Ошибка при чтении тела ответа: %v", err)
+		return
 	}
-
-	fmt.Println("Данные из body:")
-	fmt.Println(string(body))
-
-	var boostResponse BoostResponse
-
-	err = json.Unmarshal(body, &boostResponse)
+	var boosts []Boost
+	err = json.Unmarshal(body, &boosts)
 	if err != nil {
 		fmt.Printf("Ошибка при десереализации json: %v", err)
+		return
 	}
 
-	if err := json.NewDecoder(response.Body).Decode(&boostResponse); err != nil {
-		fmt.Printf("Ошибка при декодировании JSON: %v", err)
-	}
+	for _, boost := range boosts {
+		fmt.Printf("chain id %s\n", boost.ChainId)
+		if boost.ChainId == "solana" {
+			fmt.Printf("Токен: %s, Сумма %.3f, Общая сумма: %.2f\n", boost.TokenAdress, boost.Amount, boost.TotalAmount)
 
-	for _, boost := range boostResponse.Data.Boosts {
-		fmt.Printf("Токен: %s, Сумма: %.2f\n", boost.TokenAdress, boost.TotalAmount)
+			fmt.Println("Ссылки:")
+			for i, link := range boost.Links {
+				fmt.Printf("  Ссылка #%d:\n", i+1)
+				for key, value := range link {
+					fmt.Printf("    %s: %s\n", key, value)
+				}
+			}
+		}
+
 	}
 }
